@@ -15,7 +15,7 @@ def get_sm_id(so):
         select so.name "sale_order"
                ,product.default_code pn
                ,pav.name "attribute"
-               ,sm.name description
+               ,pt.name short_description
                ,coalesce(sml.qty_done, sm.product_uom_qty) quantity
                ,sm.id "sn"
           from sale_order "so"
@@ -23,6 +23,7 @@ def get_sm_id(so):
                join stock_move sm on sol.id = sm.sale_line_id
                -- pn with attributes
                join product_product product on sm.product_id = product.id
+               join product_template pt on product.product_tmpl_id = pt.id
                left join product_attribute_value_product_product_rel rel on product.id = rel.product_product_id
                left join product_attribute_value pav on rel.product_attribute_value_id = pav.id
                join stock_move_line sml on sm.id = sml.move_id -- options for quantity
@@ -38,7 +39,11 @@ def sm_id_gen(input_file='input_file.csv'):
     '''A generator.
     '''
     for so in pd.read_csv(input_file).sale_order:
-        yield get_sm_id(so)
+        df = get_sm_id(so)
+        if df.empty:
+            print(f'{so} is empty for sn')
+        else:
+            yield df
 
 def output(df, output_file='karen'): # karen is a filename
     d = date.strftime(date.today(), '%Y%m%d')
