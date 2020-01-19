@@ -1,55 +1,54 @@
 from datetime import date
 import pandas as pd
 
-from odoo_some_company import live
+from connections import live
 
 pd.set_option('display.max_columns', 9)
 
-def get_df(so): 
-    '''It creates a df with 4 columns.
-       sale order name, product name, quantity of the stock move and stock move id.
+def get_sm_id(so):
+    '''
+    It creates a df with 5 columns.
+    sale_order, pn, attribute, quantity and sn
     '''
 
-    sql = f'''select so.name sale_order
-                     ,pp.default_code pn
-                     --,sol.name description
-                     --,sol.product_uom_qty sol_quantity
-                     ,sm.product_uom_qty sm_quantity
-                     ,sm.id "sm_id aka sn"
-                     --,sol.serial_number sol_sn
-                     --,sp.name sp_name
-                     --,sol.id sol_id
-                     --,sol.status sol_status
-                     --,sm.state sm_state
-                from sale_order so
-                     left join sale_order_line sol on so.id = sol.order_id
-                     left join product_product pp on sol.product_id = pp.id
-                     left join stock_move sm on sol.id = sm.sale_order_line_id
-                     left join stock_picking sp on sm.picking_id = sp.id
-               where so.name ~* '{so}'
-                     and sol.status !~*'^d$|^td$'
-                     and sm.state !~* 'cancel'
-                     and sp.name ~* '^rol.(?:wip.out|pick)'
-               order by so.id, sol.id
+    sql = f'''
+        select so.name "sale_order"
+               ,product.default_code pn
+               ,pav.name "attribute"
+               ,sm.name description
+               ,coalesce(sml.qty_done, sm.product_uom_qty) quantity
+               ,sm.id "sn"
+          from sale_order "so"
+               join sale_order_line sol on so.id = sol.order_id
+               join stock_move sm on sol.id = sm.sale_line_id
+               -- pn with attributes
+               join product_product product on sm.product_id = product.id
+               left join product_attribute_value_product_product_rel rel on product.id = rel.product_product_id
+               left join product_attribute_value pav on rel.product_attribute_value_id = pav.id
+               join stock_move_line sml on sm.id = sml.move_id -- options for quantity
+               join stock_location dest on sm.location_dest_id = dest.id -- to use 'usage' filter
+         where sm.state not in ('draft', 'cancel')
+               and dest.usage in ('internal', 'customer', 'transit')
+               and product.default_code ~* '^[pa]-|^\d'
+               and so.name = '{so}'
     '''
-    return pd.read_sql(sql, live)                 
+    return pd.read_sql(sql, live)
 
-def hehe(input_file='input_file.csv'):
+def sm_id_gen(input_file='input_file.csv'):
     '''A generator.
-       Maybe it's a better idea to modify "where" clause.
     '''
     for so in pd.read_csv(input_file).sale_order:
-        yield get_df(so)
+        yield get_sm_id(so)
 
-def output(df, output_file='output_filename'):
-    d = date.strftime(date.today(), '%y%m%d')
+def output(df, output_file='karen'): # karen is a filename
+    d = date.strftime(date.today(), '%Y%m%d')
     df.to_csv(f'{output_file}_{d}.csv', index = None)
     print('job done')
 
 def main():
 
-    df = pd.concat(hehe())
-    output(df)
+    sn_df = pd.concat(sm_id_gen())
+    output(sn_df)
 
 if __name__ == '__main__':
     main()
